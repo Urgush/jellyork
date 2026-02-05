@@ -258,6 +258,8 @@ def create_episode_nfo(path: Path, title: str, season: int, episode: int):
 
 def create_poster(path: Path, title: str, year: str):
     """Creates a simple poster image"""
+    import sys
+    
     # Create image
     width, height = 300, 450
     img = Image.new('RGB', (width, height), color='#2C3E50')
@@ -266,13 +268,27 @@ def create_poster(path: Path, title: str, year: str):
     # Draw border
     draw.rectangle([10, 10, width-10, height-10], outline='#ECF0F1', width=3)
     
-    # Text
+    # Platform-specific font loading
+    font_title = None
+    font_year = None
+    
     try:
-        # Try to use system font
-        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-        font_year = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
-    except:
-        # Fallback to default font
+        if sys.platform == "darwin":  # macOS
+            font_title = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 24)
+            font_year = ImageFont.truetype("/System/Library/Fonts/Supplemental/Arial.ttf", 18)
+        elif sys.platform == "linux":  # Linux
+            font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
+            font_year = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+        elif sys.platform == "win32":  # Windows
+            font_title = ImageFont.truetype("C:\\Windows\\Fonts\\arialbd.ttf", 24)
+            font_year = ImageFont.truetype("C:\\Windows\\Fonts\\arial.ttf", 18)
+        else:
+            # Unknown platform - use default
+            font_title = ImageFont.load_default()
+            font_year = ImageFont.load_default()
+    except Exception as e:
+        # Fallback to default font if platform-specific font fails
+        print(f"  Note: Using default font (platform font not found: {e})")
         font_title = ImageFont.load_default()
         font_year = ImageFont.load_default()
     
