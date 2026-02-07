@@ -4,7 +4,7 @@
 
 # JellyOrk Catalog Generator
 
-Creates PDF catalogs from your Jellyfin media collection.
+Creates PDF catalogs from your Jellyfin media collection. New version is 1.1.0
 
 ## 🤖 Important Development Notes
 
@@ -23,6 +23,7 @@ This tool was tested exclusively on Windows 11, but it should be functional on L
 - ✅ Smart article handling for sorting (ignores "The", "Das", "Le", etc.)
 - ✅ Audio and subtitle information
 - ✅ TV show season overview
+- ✅ Automatically optimizes images for PDF inclusion (new in v1.1.0)
 
 
 ## Installation
@@ -69,11 +70,39 @@ python jellyork_catalog.py /path/to/jellyfin -s type
 python jellyork_catalog.py /path/to/jellyfin -o my_catalog.pdf
 ```
 
-### Combine All Options
+### Combine Options
 
 ```bash
 python jellyork_catalog.py /path/to/jellyfin -s year -o collection_2024.pdf
 ```
+### Image Quality and Size Control (new in 1.1.0)
+
+Control image quality and size to balance PDF file size vs. quality:
+
+**Lower quality for smaller files:**
+```bash
+python jellork_catalog.py /path/to/jellyfin -q 60
+```
+
+**Higher quality for better images:**
+```bash
+python jellork_catalog.py /path/to/jellyfin -q 85
+```
+
+**Larger posters:**
+```bash
+python jellork_catalog.py /path/to/jellyfin -w 5.0 --season-width 4.0
+```
+
+**Combine quality and size settings:**
+```bash
+python jellork_catalog.py /path/to/jellyfin -q 85 -w 5.0 -o high_quality.pdf
+```
+
+**Available image options:**
+- `-q, --quality QUALITY`: JPEG quality (1-100, default: 75)
+- `-w, --poster-width WIDTH`: Main poster width in cm (default: 4.0)
+- `--season-width WIDTH`: Season poster width in cm (default: 3.0)
 
 ## Show Help
 
@@ -184,6 +213,24 @@ The generated PDF contains:
  
 - Sample from testdata without proper poster images
 <img width="400" height="400" alt="pdf" src="https://github.com/user-attachments/assets/f61ede88-faed-41d6-9005-cb116e373402" />
+
+### PDF Optimization (new in v1.1.0)
+
+Images are automatically optimized for PDF inclusion:
+- Resized to appropriate dimensions (configurable via `-w` and `--season-width`)
+- Compressed to JPEG (quality configurable via `-q`, default: 75)
+- Alpha channels removed
+- Reduces file size significantly while maintaining visual quality
+
+**Example:** A collection with 100 movies typically produces a PDF of 5-15 MB instead of 50-100 MB with unoptimized images.
+
+**Fine-tuning:**
+- **Smaller files**: Use `-q 60` (slightly lower quality)
+- **Better quality**: Use `-q 85` (larger files)
+- **Larger posters**: Use `-w 5.0` (more detail but larger files)
+- **Smaller posters**: Use `-w 3.0` (smaller files)
+
+See "Image Quality and Size Control" section above for examples.
 
 ## Troubleshooting
 
