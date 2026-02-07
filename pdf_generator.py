@@ -20,8 +20,13 @@ import io
 class PDFGenerator:
     """Creates PDF documents from media items"""
     
-    def __init__(self, output_path: str):
+    def __init__(self, output_path: str, image_quality: int = 75, 
+                 poster_width_cm: float = 4.0, season_width_cm: float = 3.0):
         self.output_path = output_path
+        self.image_quality = image_quality
+        self.poster_width_cm = poster_width_cm
+        self.season_width_cm = season_width_cm
+        
         self.doc = SimpleDocTemplate(
             output_path,
             pagesize=A4,
@@ -204,7 +209,7 @@ class PDFGenerator:
         # Poster (if available)
         if item.poster_path and item.poster_path.exists():
             try:
-                img = self._prepare_image(item.poster_path, max_width=4*cm)
+                img = self._prepare_image(item.poster_path, max_width=self.poster_width_cm*cm)
                 content_data.append([img, self._get_description(item.description)])
             except Exception as e:
                 print(f"Error loading {item.poster_path}: {e}")
@@ -216,7 +221,11 @@ class PDFGenerator:
         
         # If we have poster + text, create table
         if content_data:
-            content_table = Table(content_data, colWidths=[4.5*cm, 12*cm])
+            # Calculate column widths based on poster size
+            poster_col_width = (self.poster_width_cm + 0.5) * cm  # Add small margin
+            text_col_width = (17 - self.poster_width_cm - 0.5) * cm  # Remaining width
+            
+            content_table = Table(content_data, colWidths=[poster_col_width, text_col_width])
             content_table.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('LEFTPADDING', (0, 0), (-1, -1), 0),
@@ -274,7 +283,8 @@ class PDFGenerator:
         
         # Create table
         if season_rows:
-            col_width = 5.5*cm
+            # Calculate column width based on season poster size
+            col_width = (self.season_width_cm + 2.5) * cm  # Add margin for text
             season_table = Table(season_rows, colWidths=[col_width] * seasons_per_row)
             season_table.setStyle(TableStyle([
                 ('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -292,7 +302,7 @@ class PDFGenerator:
         # Season poster (small)
         if season.poster_path and season.poster_path.exists():
             try:
-                img = self._prepare_image(season.poster_path, max_width=3*cm)
+                img = self._prepare_image(season.poster_path, max_width=self.season_width_cm*cm)
                 cell_elements.append(img)
             except Exception as e:
                 print(f"Error loading {season.poster_path}: {e}")
@@ -305,22 +315,68 @@ class PDFGenerator:
         return cell_elements
     
     def _prepare_image(self, image_path: Path, max_width: float = 4*cm) -> Image:
-        """Prepares image for PDF"""
-        # Open with PIL and scale
+        """Prepares and optimizes image for PDF"""
+        from io import BytesIO
+        
+        # Open with PIL
         pil_img = PILImage.open(image_path)
         
-        # Calculate new size (max 4cm wide)
+        # Convert to RGB if necessary (removes alpha channel)
+        if pil_img.mode in ('RGBA', 'LA', 'P'):
+            background = PILImage.new('RGB', pil_img.size, (255, 255, 255))
+            if pil_img.mode == 'P':
+                pil_img = pil_img.convert('RGBA')
+            background.paste(pil_img, mask=pil_img.split()[-1] if pil_img.mode in ('RGBA', 'LA') else None)
+            pil_img = background
+        elif pil_img.mode != 'RGB':
+            pil_img = pil_img.convert('RGB')
+        
+        # Calculate target size maintaining aspect ratio
+        # max_width is already in reportlab points (1/72 inch)
         aspect = pil_img.height / pil_img.width
-        width = max_width
-        height = width * aspect
+        target_width = max_width
+        target_height = target_width * aspect
         
-        # Maximum 6cm high
-        if height > 6*cm:
-            height = 6*cm
-            width = height / aspect
+        # Maximum height is dynamic: 1.5x the width (typical poster ratio)
+        # But no more than 9cm to fit on page
+        max_height = min(max_width * 1.5, 9 * cm)
+        if target_height > max_height:
+            target_height = max_height
+            target_width = target_height / aspect
         
-        # Convert to reportlab Image
-        img = Image(str(image_path), width=width, height=height)
+        # Convert reportlab points to pixels for resizing
+        # We want reasonable resolution: use 150 DPI for good quality
+        dpi = 150
+        points_per_inch = 72
+        
+        # Calculate pixel dimensions
+        width_inches = target_width / points_per_inch
+        height_inches = target_height / points_per_inch
+        new_width_px = int(width_inches * dpi)
+        new_height_px = int(height_inches * dpi)
+        
+        # Only resize if image is larger (don't upscale)
+        if new_width_px < pil_img.width or new_height_px < pil_img.height:
+            pil_img_resized = pil_img.resize(
+                (new_width_px, new_height_px), 
+                PILImage.Resampling.LANCZOS
+            )
+        else:
+            # Image is already small enough, don't upscale
+            pil_img_resized = pil_img
+        
+        # Save to BytesIO with compression
+        img_buffer = BytesIO()
+        pil_img_resized.save(
+            img_buffer, 
+            format='JPEG', 
+            quality=self.image_quality,
+            optimize=True
+        )
+        img_buffer.seek(0)
+        
+        # Create reportlab Image with the correct display size
+        img = Image(img_buffer, width=target_width, height=target_height)
         return img
     
     def _get_description(self, description: str) -> Paragraph:
