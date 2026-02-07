@@ -181,8 +181,8 @@ class JellyfinScanner:
                            if not f.name.lower().startswith('season')]
             episode_count = len(episode_nfos)
             
-            # Search for season poster
-            season_poster = self._find_season_poster(season_dir, season_num)
+            # Search for season poster (pass show_dir for additional search locations)
+            season_poster = self._find_season_poster(season_dir, season_num, show_dir)
             
             seasons.append(Season(
                 season_number=season_num,
@@ -192,21 +192,34 @@ class JellyfinScanner:
         
         return sorted(seasons, key=lambda s: s.season_number)
     
-    def _find_season_poster(self, season_dir: Path, season_num: int) -> Optional[Path]:
-        """Searches for season poster"""
-        # Typical season poster names
-        poster_names = [
+    def _find_season_poster(self, season_dir: Path, season_num: int, show_dir: Path) -> Optional[Path]:
+        """Searches for season poster in multiple locations"""
+        # Priority 1: season01-poster files in show main directory (Jellyfin standard)
+        show_poster_names = [
             f'season{season_num:02d}-poster.jpg',
             f'season{season_num:02d}-poster.png',
             f'season{season_num}-poster.jpg',
             f'season{season_num}-poster.png',
+            f'season-{season_num:02d}-poster.jpg',
+            f'season-{season_num:02d}-poster.png',
+        ]
+        
+        for name in show_poster_names:
+            poster = show_dir / name
+            if poster.exists():
+                return poster
+        
+        # Priority 2: Poster files in season directory
+        season_poster_names = [
             'poster.jpg',
             'poster.png',
             'folder.jpg',
-            'folder.png'
+            'folder.png',
+            f'season{season_num:02d}-poster.jpg',
+            f'season{season_num:02d}-poster.png',
         ]
         
-        for name in poster_names:
+        for name in season_poster_names:
             poster = season_dir / name
             if poster.exists():
                 return poster
@@ -436,6 +449,9 @@ class CatalogSorter:
 
 def main():
     """Main function"""
+    import time
+    start_time = time.time()
+    
     parser = argparse.ArgumentParser(
         description='Creates PDF catalog from Jellyfin media'
     )
@@ -448,8 +464,32 @@ def main():
     parser.add_argument('-o', '--output',
                        default='jellyfin_catalog.pdf',
                        help='Output PDF name (default: jellyfin_catalog.pdf)')
+    parser.add_argument('-q', '--quality',
+                       type=int,
+                       default=75,
+                       choices=range(1, 101),
+                       metavar='QUALITY',
+                       help='JPEG quality for images, 1-100 (default: 75, higher=better quality but larger file)')
+    parser.add_argument('-w', '--poster-width',
+                       type=float,
+                       default=4.0,
+                       metavar='WIDTH',
+                       help='Maximum poster width in cm (default: 4.0)')
+    parser.add_argument('--season-width',
+                       type=float,
+                       default=3.0,
+                       metavar='WIDTH',
+                       help='Maximum season poster width in cm (default: 3.0)')
     
     args = parser.parse_args()
+    
+    # Validate poster widths
+    if args.poster_width < 1.0 or args.poster_width > 10.0:
+        print("Error: Poster width must be between 1.0 and 10.0 cm")
+        return
+    if args.season_width < 1.0 or args.season_width > 10.0:
+        print("Error: Season poster width must be between 1.0 and 10.0 cm")
+        return
     
     # Scan directory
     scanner = JellyfinScanner(args.path)
@@ -480,10 +520,29 @@ def main():
     # Create PDF
     from pdf_generator import PDFGenerator
     
-    pdf_gen = PDFGenerator(args.output)
+    pdf_gen = PDFGenerator(
+        args.output,
+        image_quality=args.quality,
+        poster_width_cm=args.poster_width,
+        season_width_cm=args.season_width
+    )
     pdf_gen.generate(items, args.sort)
     
+    # Calculate elapsed time
+    elapsed_time = time.time() - start_time
+    
+    # Format time nicely
+    if elapsed_time < 60:
+        time_str = f"{elapsed_time:.1f} seconds"
+    else:
+        minutes = int(elapsed_time // 60)
+        seconds = elapsed_time % 60
+        time_str = f"{minutes}m {seconds:.1f}s"
+    
     print(f"\n✓ Catalog successfully created: {args.output}")
+    print(f"  Image quality: {args.quality}%, Poster width: {args.poster_width}cm, Season width: {args.season_width}cm")
+    print(f"  Processing time: {time_str}")
+
 
 
 if __name__ == "__main__":
